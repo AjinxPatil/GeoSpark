@@ -10,33 +10,22 @@ import com.vividsolutions.jts.geom.Envelope;
 import com.vividsolutions.jts.geom.Point;
 import com.vividsolutions.jts.geom.Polygon;
 import com.vividsolutions.jts.index.strtree.STRtree;
-
 import org.apache.spark.api.java.JavaPairRDD;
-
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
-
-import org.datasyslab.geospark.joinJudgement.PointByPolygonJudgement;
-import org.datasyslab.geospark.joinJudgement.PointByPolygonJudgementUsingIndex;
-import org.datasyslab.geospark.joinJudgement.PointByRectangleJudgement;
-import org.datasyslab.geospark.joinJudgement.PointByRectangleJudgementUsingIndex;
-import org.datasyslab.geospark.joinJudgement.PolygonByPolygonJudgement;
-import org.datasyslab.geospark.joinJudgement.PolygonByPolygonJudgementUsingIndex;
-import org.datasyslab.geospark.joinJudgement.RectangleByRectangleJudgement;
-import org.datasyslab.geospark.joinJudgement.RectangleByRectangleJudgementUsingIndex;
-
+import org.datasyslab.geospark.joinJudgement.*;
 import org.datasyslab.geospark.spatialRDD.PointRDD;
 import org.datasyslab.geospark.spatialRDD.PolygonRDD;
 import org.datasyslab.geospark.spatialRDD.RectangleRDD;
+import scala.Tuple2;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-
-import scala.Tuple2;
 
 //todo: Replace older join query class.
 
@@ -403,7 +392,22 @@ public class JoinQuery implements Serializable{
             });
         }
 
-
-
-
+    /**
+     * Spatial Join Query using simple cartesian product algorithm
+     * @param points <code>PointRDD</code>
+     * @param rects <code>RectangleRDD</code>
+     * @param sc <code>JavaSparkContext</code>
+     * @return a <code>JavaPairRDD</code> of <code>Envelope</code> and corresponding set of points in the envelope
+     */
+    public static JavaPairRDD<Envelope, HashSet<Point>> SpatialJoinQueryUsingCartesianProduct(final PointRDD points, final RectangleRDD rects, final JavaSparkContext sc) {
+        final List<Tuple2<Envelope, HashSet<Point>>> pairs = new ArrayList<>();
+        for (Iterator<Envelope> it = rects.getRawRectangleRDD().toLocalIterator(); it.hasNext(); ) {
+            final Envelope env = it.next();
+            final JavaRDD<Point> ptsInEnvRdd = RangeQuery.SpatialRangeQuery(points, env, 0).getRawPointRDD();
+            final List<Point> ptsInEvn = ptsInEnvRdd.collect();
+            ptsInEnvRdd.unpersist();
+            pairs.add(new Tuple2<>(env, new HashSet<>(ptsInEvn)));
+        }
+        return sc.parallelizePairs(pairs);
+    }
 }
