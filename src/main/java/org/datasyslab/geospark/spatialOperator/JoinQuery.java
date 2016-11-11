@@ -11,7 +11,6 @@ import com.vividsolutions.jts.geom.Point;
 import com.vividsolutions.jts.geom.Polygon;
 import com.vividsolutions.jts.index.strtree.STRtree;
 import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
@@ -24,7 +23,6 @@ import scala.Tuple2;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 
 //todo: Replace older join query class.
@@ -394,18 +392,23 @@ public class JoinQuery implements Serializable{
 
     /**
      * Spatial Join Query using simple cartesian product algorithm
+     *
      * @param points <code>PointRDD</code>
-     * @param rects <code>RectangleRDD</code>
-     * @param sc <code>JavaSparkContext</code>
-     * @return a <code>JavaPairRDD</code> of <code>Envelope</code> and corresponding set of points in the envelope
+     * @param rects  <code>RectangleRDD</code>
+     * @return a <code>JavaPairRDD</code> of <code>Envelope</code> and corresponding set of points in the envelope;
+     * otherwise returns null if either of the RDD parameters is null
      */
-    public static JavaPairRDD<Envelope, HashSet<Point>> SpatialJoinQueryUsingCartesianProduct(final PointRDD points, final RectangleRDD rects, final JavaSparkContext sc) {
+    public JavaPairRDD<Envelope, HashSet<Point>> SpatialJoinQueryUsingCartesianProduct(final PointRDD points, final RectangleRDD rects) {
+        if (points == null || rects == null) {
+            return null;
+        }
         final List<Tuple2<Envelope, HashSet<Point>>> pairs = new ArrayList<>();
-        for (Iterator<Envelope> it = rects.getRawRectangleRDD().toLocalIterator(); it.hasNext(); ) {
-            final Envelope env = it.next();
-            final JavaRDD<Point> ptsInEnvRdd = RangeQuery.SpatialRangeQuery(points, env, 0).getRawPointRDD();
-            final List<Point> ptsInEvn = ptsInEnvRdd.collect();
-            ptsInEnvRdd.unpersist();
+        final List<Envelope> envs = rects.getRawRectangleRDD().collect();
+        for (Envelope env : envs) {
+            final List<Point> ptsInEvn = RangeQuery.SpatialRangeQuery(points, env, 0).getRawPointRDD().collect();
+            if (ptsInEvn.isEmpty()) {
+                continue;
+            }
             pairs.add(new Tuple2<>(env, new HashSet<>(ptsInEvn)));
         }
         return sc.parallelizePairs(pairs);
